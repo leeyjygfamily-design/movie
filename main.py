@@ -76,17 +76,17 @@ st.markdown(
     }
 </style>
 """,
-    unsafe_allow_scope=True,
+    unsafe_allow_html=True,  # 오타 수정된 부분
 )
 
 # 2. 웅장한 헤더 영역
 st.markdown(
     "<h1 class='epic-title'>🏛️ 운명의 박스오피스 🏛️</h1>",
-    unsafe_allow_scope=True,
+    unsafe_allow_html=True,
 )
 st.markdown(
     "<p class='epic-subtitle'>당신이 세상에 태어난 그날, 전국의 극장을 사로잡았던 전설의 영화</p>",
-    unsafe_allow_scope=True,
+    unsafe_allow_html=True,
 )
 
 # 3. 날짜 설정 (KOBIS 데이터 전산화 기준일: 2003년 11월 11일 ~ 어제)
@@ -98,7 +98,7 @@ except Exception:
     )
 
 max_date = (now_kst - datetime.timedelta(days=1)).date()
-min_date = datetime.date(2003, 11, 11)  # KOBIS 데이터 제공 시작일
+min_date = datetime.date(2003, 11, 11)
 
 # 생년월일 입력 섹션
 col_space1, col_input, col_space2 = st.columns([1, 2, 1])
@@ -175,7 +175,7 @@ else:
             <div class="top-movie-title">« {top_movie['movieNm']} »</div>
         </div>
         """,
-            unsafe_allow_scope=True,
+            unsafe_allow_html=True,
         )
 
         # 1위 영화 세부 지표
@@ -187,7 +187,7 @@ else:
         with m_col3:
             st.metric("개봉일", top_movie["openDt"])
 
-        st.markdown("<br>", unsafe_allow_scope=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # 상위 5개 관객수 차트
         st.subheader("⚔️ 당시 왕좌를 다투던 TOP 5 영화")
@@ -196,7 +196,7 @@ else:
         chart_df.columns = ["관객수"]
         st.bar_chart(chart_df)
 
-        st.markdown("<br>", unsafe_allow_scope=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # 전체 순위 표
         st.subheader("📜 당시 박스오피스 전체 순위 (TOP 10)")
