@@ -4,148 +4,216 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# 1. 페이지 기본 설정 (제목 및 넓은 레이아웃)
-st.set_page_config(page_title="어제 박스오피스 순위", layout="wide")
-st.title("🎬 어제 일별 박스오피스 TOP 10")
+# 1. 페이지 기본 설정 및 웅장한 다크 시네마 테마 CSS 적용
+st.set_page_config(
+    page_title="운명의 영화 - 당신이 태어난 날의 BoxOffice",
+    layout="wide",
+    page_icon="🎬",
+)
 
-# 2. 파이썬 기본 모듈(zoneinfo)로 한국 표준시(KST) 어제 날짜 구하기
-# 배포 서버 시계(UTC)와 상관없이 한국 시간 기준으로 어제 날짜를 계산합니다.
+st.markdown(
+    """
+<style>
+    /* 전체 배경을 깊은 다크 시네마 톤으로 변경 */
+    .stApp {
+        background-color: #0b0c10;
+        color: #c5c6c7;
+    }
+    
+    /* 웅장한 금빛 대형 타이틀 */
+    .epic-title {
+        font-size: 3.2rem !important;
+        font-weight: 900 !important;
+        color: #d4af37 !important;
+        text-align: center;
+        letter-spacing: 4px;
+        text-shadow: 0px 0px 20px rgba(212, 175, 55, 0.6);
+        margin-bottom: 0.5rem;
+    }
+    
+    /* 서브 타이틀 스타일 */
+    .epic-subtitle {
+        font-size: 1.2rem;
+        text-align: center;
+        color: #66fcf1;
+        letter-spacing: 2px;
+        margin-bottom: 2rem;
+        font-weight: 300;
+    }
+    
+    /* 1위 영화 커스텀 카드 */
+    .top-movie-card {
+        background: linear-gradient(135deg, #1f2833 0%, #0b0c10 100%);
+        border: 2px solid #d4af37;
+        border-radius: 15px;
+        padding: 2rem;
+        box-shadow: 0px 0px 30px rgba(212, 175, 55, 0.3);
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .top-movie-title {
+        font-size: 2.8rem;
+        font-weight: 800;
+        color: #ffffff;
+        text-shadow: 0 0 10px #45a29e;
+        margin-top: 1rem;
+    }
+
+    /* Streamlit 지표 카드 스타일 재정의 */
+    div[data-testid="stMetric"] {
+        background-color: #1f2833;
+        border: 1px solid #45a29e;
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #c5c6c7 !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #66fcf1 !important;
+    }
+</style>
+""",
+    unsafe_allow_scope=True,
+)
+
+# 2. 웅장한 헤더 영역
+st.markdown(
+    "<h1 class='epic-title'>🏛️ 운명의 박스오피스 🏛️</h1>",
+    unsafe_allow_scope=True,
+)
+st.markdown(
+    "<p class='epic-subtitle'>당신이 세상에 태어난 그날, 전국의 극장을 사로잡았던 전설의 영화</p>",
+    unsafe_allow_scope=True,
+)
+
+# 3. 날짜 설정 (KOBIS 데이터 전산화 기준일: 2003년 11월 11일 ~ 어제)
 try:
     now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
 except Exception:
-    # 혹시 모를 타임존 환경 예외를 대비한 UTC+9 고정 시차 방식
     now_kst = datetime.datetime.now(
         datetime.timezone(datetime.timedelta(hours=9))
     )
 
-yesterday = now_kst - datetime.timedelta(days=1)
-target_dt = yesterday.strftime("%Y%m%d")  # API 요청용 (YYYYMMDD)
-formatted_date = yesterday.strftime("%Y년 %m월 %d일")
+max_date = (now_kst - datetime.timedelta(days=1)).date()
+min_date = datetime.date(2003, 11, 11)  # KOBIS 데이터 제공 시작일
 
-st.caption(f"기준일자: {formatted_date}")
+# 생년월일 입력 섹션
+col_space1, col_input, col_space2 = st.columns([1, 2, 1])
+with col_input:
+    birth_date = st.date_input(
+        "✨ 생년월일을 선택하고 운명의 영화를 확인하세요",
+        value=datetime.date(2005, 1, 1),
+        min_value=min_date,
+        max_value=max_date,
+        help="2003년 11월 11일 이후 날짜부터 조회할 수 있습니다.",
+    )
 
-# 3. Streamlit Secrets에서 API 키 불러오기
-# Streamlit Cloud의 Secrets 설정에 KOBIS_KEY가 등록되어 있어야 합니다.
+target_dt = birth_date.strftime("%Y%m%d")
+formatted_date = birth_date.strftime("%Y년 %m월 %d일")
+
+# 4. API 키 확인
 if "KOBIS_KEY" not in st.secrets:
     st.error(
-        "❌ **API 키 설정 필요**: Streamlit Cloud Secrets에 `KOBIS_KEY`를 등록해 주세요."
+        "❌ **API 키 미설정**: Streamlit Secrets에 `KOBIS_KEY`를 등록해야 합니다."
     )
     st.stop()
 
 api_key = st.secrets["KOBIS_KEY"]
 
 
-# 4. KOBIS API 요청 처리 함수 (캐싱 적용으로 속도 최적화)
-@st.cache_data(ttl=3600)  # 1시간 동안 조회 결과 보관
-def fetch_box_office_data(key, date_str):
+# 5. KOBIS API 데이터 호출 함수
+@st.cache_data(ttl=86400)
+def fetch_box_office(key, date_str):
     url = "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
     params = {"key": key, "targetDt": date_str}
-
     try:
-        response = requests.get(url, params=params, timeout=10)
-        # HTTP 응답 코드가 200(성공)이 아닌 경우 예외 처리
-        response.raise_for_status()
-        return response.json(), None
+        res = requests.get(url, params=params, timeout=10)
+        res.raise_for_status()
+        return res.json(), None
     except requests.exceptions.RequestException as e:
-        return None, f"네트워크 통신 오류가 발생했습니다: {e}"
+        return None, f"통신 장애 발생: {e}"
 
 
-# API 데이터 요청 실행
-data, error_msg = fetch_box_office_data(api_key, target_dt)
+data, error_msg = fetch_box_office(api_key, target_dt)
 
-# 5. 오류 및 예외 상황 한국어 안내 처리
+st.write("---")
+
+# 6. 결과 출력 및 예외 안내
 if error_msg:
-    st.error(
-        f"❌ **데이터 요청 실패**\n\n- {error_msg}\n- 인터넷 연결 상태를 확인해 주세요."
-    )
+    st.error(f"❌ 데이터 요청 실패: {error_msg}")
 elif not data:
-    st.error(
-        "❌ **응답 데이터 없음**: 영화진흥위원회 서버로부터 데이터를 받아오지 못했습니다."
-    )
-# 인증키가 틀렸거나 문제가 있을 때 KOBIS에서 보내는 faultInfo 객체 처리
+    st.error("❌ 응답받은 데이터가 없습니다.")
 elif "faultInfo" in data:
-    fault_msg = data["faultInfo"].get(
-        "message", "알 수 없는 오류가 발생했습니다."
-    )
     st.error(
-        f"❌ **KOBIS API 오류 발생**\n\n"
-        f"- **오류 내용**: {fault_msg}\n\n"
-        "**확인해야 할 사항:**\n"
-        "1. Streamlit Cloud의 Secrets 영역에 `KOBIS_KEY` 값이 정확히 입력되었는지 확인하세요.\n"
-        "2. 영화진흥위원회(KOBIS) 개발자 센터에서 키 상태 및 일일 트래픽 제한을 확인해 주세요."
+        f"❌ **API 인증 오류**: {data['faultInfo'].get('message', '키를 확인해 주세요.')}"
     )
 else:
-    # 정상 데이터 추출
-    box_office_result = data.get("boxOfficeResult", {})
-    daily_list = box_office_result.get("dailyBoxOfficeList", [])
+    daily_list = data.get("boxOfficeResult", {}).get("dailyBoxOfficeList", [])
 
     if not daily_list:
         st.warning(
-            "⚠️ **영화 목록이 비어 있습니다.**\n\n"
-            "- 해당 날짜의 집계 데이터가 아직 업데이트되지 않았거나 조회할 영화가 없을 수 있습니다."
+            f"⚠️ **{formatted_date}**의 집계된 박스오피스 기록이 없습니다."
         )
     else:
-        # 6. 데이터 전처리 (문자열 데이터를 숫자형 데이터로 변환)
         df = pd.DataFrame(daily_list)
-
         df["rank"] = df["rank"].astype(int)
         df["audiCnt"] = df["audiCnt"].astype(int)
         df["audiAcc"] = df["audiAcc"].astype(int)
-        df["scrnCnt"] = df["scrnCnt"].astype(int)
 
-        # 7. [시각화 1] 1위 영화 지표 카드 3장
         top_movie = df.iloc[0]
 
-        st.subheader(f"🥇 1위: {top_movie['movieNm']}")
-        col1, col2, col3 = st.columns(3)
+        # 웅장한 1위 영화 하이라이트 전파
+        st.markdown(
+            f"""
+        <div class="top-movie-card">
+            <p style="color: #d4af37; font-size: 1.2rem; font-weight: bold; letter-spacing: 3px;">
+                👑 {formatted_date} · 당신과 함께 태어난 1위 영화 👑
+            </p>
+            <div class="top-movie-title">« {top_movie['movieNm']} »</div>
+        </div>
+        """,
+            unsafe_allow_scope=True,
+        )
 
-        with col1:
-            st.metric(
-                label="어제 관객수", value=f"{top_movie['audiCnt']:,} 명"
-            )
-        with col2:
-            st.metric(
-                label="누적 관객수", value=f"{top_movie['audiAcc']:,} 명"
-            )
-        with col3:
-            st.metric(
-                label="상영 스크린수", value=f"{top_movie['scrnCnt']:,} 개"
-            )
+        # 1위 영화 세부 지표
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            st.metric("당일 관객 수", f"{top_movie['audiCnt']:,} 명")
+        with m_col2:
+            st.metric("누적 관객 수", f"{top_movie['audiAcc']:,} 명")
+        with m_col3:
+            st.metric("개봉일", top_movie["openDt"])
 
-        st.divider()
+        st.markdown("<br>", unsafe_allow_scope=True)
 
-        # 8. [시각화 2] 관객수 상위 5개 영화 막대그래프
-        st.subheader("📊 관객수 상위 5개 영화")
+        # 상위 5개 관객수 차트
+        st.subheader("⚔️ 당시 왕좌를 다투던 TOP 5 영화")
         top_5_df = df.head(5).copy()
-
-        # 막대그래프에 보여줄 데이터 준비
         chart_df = top_5_df[["movieNm", "audiCnt"]].set_index("movieNm")
         chart_df.columns = ["관객수"]
-
         st.bar_chart(chart_df)
 
-        st.divider()
+        st.markdown("<br>", unsafe_allow_scope=True)
 
-        # 9. [시각화 3] 전체 TOP 10 순위 표
-        st.subheader("📋 전체 박스오피스 순위")
-
-        # 표에 나타낼 컬럼 지정 및 한글화
+        # 전체 순위 표
+        st.subheader("📜 당시 박스오피스 전체 순위 (TOP 10)")
         display_df = df[
-            ["rank", "movieNm", "openDt", "audiCnt", "audiAcc", "scrnCnt"]
+            ["rank", "movieNm", "openDt", "audiCnt", "audiAcc"]
         ].copy()
         display_df.columns = [
             "순위",
             "영화명",
             "개봉일",
-            "어제 관객수",
+            "당일 관객수",
             "누적 관객수",
-            "스크린수",
         ]
 
-        # 천 단위 쉼표 표기 적용 후 데이터프레임 표시
         st.dataframe(
             display_df.style.format(
-                {"어제 관객수": "{:,}", "누적 관객수": "{:,}", "스크린수": "{:,}"}
+                {"당일 관객수": "{:,}", "누적 관객수": "{:,}"}
             ),
             use_container_width=True,
             hide_index=True,
